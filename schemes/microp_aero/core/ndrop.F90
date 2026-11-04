@@ -415,7 +415,7 @@ contains
         ! growing liquid cloud ......................................................
         !    treat the increase of cloud fraction from when cldn(i,k) > cldo(i,k)
         !    and also regenerate part of the cloud
-        cldo_tmp = cldn_tmp
+        cldo_tmp = min(lcldo(i, k), cldn_tmp)
         cldn_tmp = lcldn(i, k)
 
         if (cldn_tmp - cldo_tmp > 0.01_kind_phys) then
