@@ -1189,7 +1189,7 @@ contains
           etotal = ebrown + eintercept + eimpact
           etotal = min(etotal, 1.0_kind_phys)
 
-          rainsweepout = xnumrainsv(jr)*4._kind_phys*pi*r*r*vfall
+          rainsweepout = xnumrainsv(jr)*pi*r*r*vfall
 
           scavsumnumbb = scavsumnumbb + rainsweepout*etotal*ynumaerosv(ja)
           scavsumvolbb = scavsumvolbb + rainsweepout*etotal*yvolaerosv(ja)
