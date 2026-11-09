@@ -1288,6 +1288,10 @@ contains
           1.2879071621313094e-12_kind_phys*log(c3)*log(j) - &
           3.80352446061867e-15_kind_phys*t*log(c3)*log(j) - 1.8790172502456827e-14_kind_phys*log(j)**2
 
+      ! the Merikanto et al. (2007) fit above gives the cluster radius in m;
+      ! this interface and its consumers use nm
+      r = r*1.0e9_kind_phys
+
       nacid = -4.7154180661803595_kind_phys + 0.13436423483953885_kind_phys*t - &
               0.00047184686478816176_kind_phys*t**2 - &
               2.564010713640308_kind_phys*log(c2) + 0.011353312899114723_kind_phys*t*log(c2) + &

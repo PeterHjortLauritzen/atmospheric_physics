@@ -582,7 +582,7 @@ contains
     sig2 = stc0(i) + stc1(i)*t
     ! calculate derivative needed later for kelvin factor for h2o
     dsigma_dwt = (sig2 - sig1)/(stwtp(i) - stwtp(i - 1))
-    surf_tens = sig1 + dsigma_dwt*(wtpct_flat - stwtp(i))
+    surf_tens = sig1 + dsigma_dwt*(wtpct_flat - stwtp(i - 1))
 
       !!  Calculate density (g/cm3) of sulfate of
       !!  different compositions as a linear function of temperature.
@@ -602,7 +602,7 @@ contains
     rkelvinH2O_b = 1 + wtpct_flat*drho_dwt/ &
                    sulfate_density - 3._kind_phys*wtpct_flat*dsigma_dwt/(2._kind_phys*surf_tens)
 
-    rkelvinH2O_a = 2._kind_phys*wtmol_h2so4*surf_tens/ &
+    rkelvinH2O_a = 2._kind_phys*wtmol_h2o*surf_tens/ &
                    (sulfate_density*RGAS*t*r)
 
     rkelvinH2O = exp(rkelvinH2O_a*rkelvinH2O_b)
