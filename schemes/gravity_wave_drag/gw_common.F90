@@ -16,6 +16,7 @@ module gw_common
   public :: GWBand
 
   public :: gw_drag_prof
+  public :: gw_ediff_apply
   public :: qbo_hdepth_scaling
   public :: calc_taucd, momentum_flux, momentum_fixer
   public :: energy_change, energy_fixer
@@ -689,13 +690,17 @@ contains
     end if
     !===========================================
 
-    if (do_vertical_diffusion) then
+    ! Calculate effective diffusivity and LU decomposition for the
+    ! vertical diffusion solver. The diffusivity is always computed, so a
+    ! caller invoking this routine once per wave source (e.g. once per
+    ! ridge) can sum egwdffi over the sources and apply the vertical
+    ! diffusion once with the total (see gw_ediff_apply); with
+    ! lapply_vdiff=.false. only the solves below are skipped.
+    call gw_ediff(ncol, pver, pverp, band%ngwv, kbot_tend, ktop, tend_level, &
+                  gwut, ubm, nm, rhoi, dt, prndl, gravit, p, c, vramp, &
+                  egwdffi, decomp, ro_adjust=ro_adjust)
 
-      ! Calculate effective diffusivity and LU decomposition for the
-      ! vertical diffusion solver.
-      call gw_ediff(ncol, pver, pverp, band%ngwv, kbot_tend, ktop, tend_level, &
-                    gwut, ubm, nm, rhoi, dt, prndl, gravit, p, c, vramp, &
-                    egwdffi, decomp, ro_adjust=ro_adjust)
+    if (do_vertical_diffusion) then
 
       ! Calculate tendency on each constituent.
       do m = 1, size(q, 3)
@@ -728,6 +733,79 @@ contains
     call decomp%finalize()
 
   end subroutine gw_drag_prof
+
+!==========================================================================
+
+! Apply the vertical diffusion of constituents and dry static energy once,
+! from a total effective diffusivity summed over several wave sources
+! (e.g. the ridges of the ridge scheme). Solving the implicit diffusion
+! independently per source from the same input state and summing the
+! tendencies over-mixes the column and is numerically unstable; the
+! correct composition is to sum the diffusivities and solve once
+! (see ESCOMP/CAM issue #1753).
+
+  subroutine gw_ediff_apply(ncol, dt, p, rhoi, tend_level, egwdffi_tot, &
+                            q, dse, qtgw, dttdf)
+
+    use coords_1d, only: coords1d
+    use gw_diffusion, only: gw_diff_tend
+    use vdiff_lu_solver, only: fin_vol_lu_decomp
+    use linear_1d_operators, only: TriDiagDecomp
+
+    ! Column dimension.
+    integer, intent(in) :: ncol
+    ! Time step.
+    real(kind_phys), intent(in) :: dt
+    ! Pressure coordinates.
+    type(coords1d), intent(in) :: p
+    ! Interface densities.
+    real(kind_phys), intent(in) :: rhoi(:, :)
+    ! Lowest level where tendencies are calculated (deepest over sources).
+    integer, intent(in) :: tend_level(:)
+    ! Total effective gravity wave diffusivity at interfaces.
+    real(kind_phys), intent(in) :: egwdffi_tot(:, :)
+    ! Constituent array.
+    real(kind_phys), intent(in) :: q(:, :, :)
+    ! Dry static energy.
+    real(kind_phys), intent(in) :: dse(:, :)
+
+    ! Gravity wave constituent tendency.
+    real(kind_phys), intent(out) :: qtgw(:, :, :)
+    ! Temperature tendency from diffusion.
+    real(kind_phys), intent(out) :: dttdf(:, :)
+
+    ! (dp/dz)^2 == (gravit*rho)^2 on interfaces.
+    real(kind_phys) :: dpidz_sq(ncol, pverp)
+    ! LU decomposition.
+    type(TriDiagDecomp) :: decomp
+    ! Bottom level to operate on; constituent index.
+    integer :: kbot_tend, m
+
+    kbot_tend = maxval(tend_level)
+
+    ! Calculate (dp/dz)^2.
+    dpidz_sq = rhoi(:ncol, :)*gravit
+    dpidz_sq = dpidz_sq*dpidz_sq
+
+    ! Decompose the diffusion matrix from the total diffusivity, exactly
+    ! as gw_ediff does for a single source.
+    decomp = fin_vol_lu_decomp(dt, p%section([1, ncol], [ktop, kbot_tend]), &
+                               coef_q_diff=egwdffi_tot(:ncol, ktop:kbot_tend + 1)* &
+                               dpidz_sq(:, ktop:kbot_tend + 1))
+
+    ! Calculate tendency on each constituent.
+    do m = 1, size(q, 3)
+      call gw_diff_tend(ncol, pver, kbot_tend, ktop, q(:ncol, :, m), &
+                        dt, decomp, qtgw(:, :, m))
+    end do
+
+    ! Calculate tendency from diffusing dry static energy (dttdf).
+    call gw_diff_tend(ncol, pver, kbot_tend, ktop, dse(:ncol, :), dt, &
+                      decomp, dttdf)
+
+    call decomp%finalize()
+
+  end subroutine gw_ediff_apply
 
 !==========================================================================
 

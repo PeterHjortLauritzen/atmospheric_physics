@@ -1570,7 +1570,7 @@ contains
                          errmsg, errflg)
 
     use coords_1d, only: coords1d
-    use gw_common, only: GWBand, gw_drag_prof, energy_change
+    use gw_common, only: GWBand, gw_drag_prof, energy_change, gw_ediff_apply
 
     type(GWBand), intent(in) :: band_oro
     real(kind_phys), intent(in) :: vramp(:)
@@ -1707,6 +1707,10 @@ contains
 
     ! Effective gravity wave diffusivity at interfaces.
     real(kind_phys) :: egwdffi(ncol, pver + 1)
+    ! Total effective diffusivity summed over all ridges (and residual).
+    real(kind_phys) :: egwdffi_tot(ncol, pver + 1)
+    ! Deepest level where any ridge applies tendencies, per column.
+    integer :: tend_level_tot(ncol)
 
     ! Temperature tendencies from diffusion and kinetic energy.
     real(kind_phys) :: dttdf(ncol, pver)
@@ -1736,6 +1740,8 @@ contains
     utrdg = 0._kind_phys
     vtrdg = 0._kind_phys
     tau_diag = -9999._kind_phys
+    egwdffi_tot = 0._kind_phys
+    tend_level_tot = 0
 
     do nn = 1, n_rdg
       kwvrdg = 0.001_kind_phys/(hwdth(:, nn) + 0.001_kind_phys)
@@ -1770,9 +1776,16 @@ contains
                         effgw, phase_speeds, kvtt, q, dse, tau, utgw, vtgw, &
                         ttgw, qtgw, egwdffi, gwut, dttdf, dttke, &
                         kwvrdg=kwvrdg, &
-                        satfac_in=1._kind_phys, lapply_vdiff=gw_rdg_do_vdiff, tau_diag=tau_diag)
+                        satfac_in=1._kind_phys, lapply_vdiff=.false., tau_diag=tau_diag)
 
-      ! Add the tendencies from each ridge to the totals.
+      ! Sum the effective diffusivity; the vertical diffusion of q and dse
+      ! is applied once, after all ridges, with the summed diffusivity.
+      egwdffi_tot = egwdffi_tot + egwdffi
+      tend_level_tot = max(tend_level_tot, tend_level)
+
+      ! Add the tendencies from each ridge to the totals. With the
+      ! vertical diffusion deferred to a single solve after the loop,
+      ! ttgw holds only the kinetic-energy heating here.
       do k = 1, pver
         ! diagnostics
         utrdg(:, k) = utrdg(:, k) + utgw(:, k)
@@ -1782,12 +1795,6 @@ contains
         u_tend(:ncol, k) = u_tend(:ncol, k) + utgw(:, k)
         v_tend(:ncol, k) = v_tend(:ncol, k) + vtgw(:, k)
         s_tend(:ncol, k) = s_tend(:ncol, k) + ttgw(:, k)
-      end do
-
-      do m = 1, pcnst
-        do k = 1, pver
-          q_tend(:ncol, k, m) = q_tend(:ncol, k, m) + qtgw(:, k, m)
-        end do
       end do
 
       do k = 1, pver + 1
@@ -1820,7 +1827,11 @@ contains
                         effgw, phase_speeds, kvtt, q, dse, tau, utgw, vtgw, &
                         ttgw, qtgw, egwdffi, gwut, dttdf, dttke, &
                         kwvrdg=kwvrdg, &
-                        satfac_in=1._kind_phys, lapply_vdiff=gw_rdg_do_vdiff, tau_diag=tau_diag)
+                        satfac_in=1._kind_phys, lapply_vdiff=.false., tau_diag=tau_diag)
+
+      ! Sum the residual-variance diffusivity into the single solve too.
+      egwdffi_tot = egwdffi_tot + egwdffi
+      tend_level_tot = max(tend_level_tot, tend_level)
 
       ! Add the tendencies from isotropic residual to the totals.
       do k = 1, pver
@@ -1834,12 +1845,6 @@ contains
         s_tend(:ncol, k) = s_tend(:ncol, k) + ttgw(:, k)
       end do
 
-      do m = 1, pcnst
-        do k = 1, pver
-          q_tend(:ncol, k, m) = q_tend(:ncol, k, m) + qtgw(:, k, m)
-        end do
-      end do
-
       do k = 1, pver + 1
         taurx0(:, k) = tau(:, 0, k)*xv
         taury0(:, k) = tau(:, 0, k)*yv
@@ -1847,6 +1852,32 @@ contains
         taury(:, k) = taury(:, k) + taury0(:, k)
       end do
     end if ! end of residual variance calc
+
+    ! Apply the vertical diffusion of constituents and dry static energy
+    ! once, with the effective diffusivity summed over all ridges (and the
+    ! isotropic residual). Solving the implicit diffusion once per ridge
+    ! from the same initial state and summing the tendencies over-mixes
+    ! the column: each solve alone is stable, but the summed update can
+    ! reverse and amplify grid-scale extrema every time step until a
+    ! tracer becomes unphysical (ESCOMP/CAM issue #1753).
+    if (gw_rdg_do_vdiff) then
+      call gw_ediff_apply(ncol, dt, p, rhoi, tend_level_tot, egwdffi_tot, &
+                          q, dse, qtgw, dttdf)
+
+      do m = 1, pcnst
+        do k = 1, pver
+          q_tend(:ncol, k, m) = q_tend(:ncol, k, m) + qtgw(:, k, m)
+        end do
+      end do
+
+      ! Heating from the diffusion of dry static energy, with the same
+      ! vramp top-of-model scaling gw_drag_prof applies to its
+      ! temperature tendency.
+      do k = 1, pver
+        s_tend(:ncol, k) = s_tend(:ncol, k) + dttdf(:, k)*vramp(k)
+        ttrdg(:, k) = ttrdg(:, k) + dttdf(:, k)*vramp(k)
+      end do
+    end if
 
     ! Calculate energy change for output to CAM's energy checker.
     call energy_change(dt, p, u, v, u_tend(:ncol, :), &
