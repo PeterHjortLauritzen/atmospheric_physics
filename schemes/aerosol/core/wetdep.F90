@@ -325,7 +325,8 @@ contains
         ! If resuspending aerosol only when all the rain has totally
         ! evaporated then zero out any aerosol tendency for partial
         ! evaporation.
-        if (convproc_do_evaprain_atonce .and. (evaps(i, k)*pdog(i) /= precabs(i))) then
+        if (convproc_do_evaprain_atonce .and. &
+            (evaps(i, k)*pdog(i) < precabs(i)*(1._kind_phys - 1.e-6_kind_phys))) then
           fracev(i) = 0._kind_phys
         end if
 
@@ -1188,7 +1189,7 @@ contains
           etotal = ebrown + eintercept + eimpact
           etotal = min(etotal, 1.0_kind_phys)
 
-          rainsweepout = xnumrainsv(jr)*4._kind_phys*pi*r*r*vfall
+          rainsweepout = xnumrainsv(jr)*pi*r*r*vfall
 
           scavsumnumbb = scavsumnumbb + rainsweepout*etotal*ynumaerosv(ja)
           scavsumvolbb = scavsumvolbb + rainsweepout*etotal*yvolaerosv(ja)
