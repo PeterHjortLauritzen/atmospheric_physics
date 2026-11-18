@@ -1574,7 +1574,7 @@ contains
     use gw_diffusion, only: gw_diff_tend                  ! SUMK
     use vdiff_lu_solver, only: fin_vol_lu_decomp          ! SUMK
     use linear_1d_operators, only: TriDiagDecomp          ! SUMK
-    use physconst, only: gravit                           ! SUMK
+    use gw_common, only: gravit                           ! SUMK
 
     type(GWBand), intent(in) :: band_oro
     real(kind_phys), intent(in) :: vramp(:)
