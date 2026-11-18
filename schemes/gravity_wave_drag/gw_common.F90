@@ -48,7 +48,7 @@ module gw_common
 
   ! Physical constants from host model.
   real(kind_phys), protected :: pi     = huge(1._kind_phys)
-  real(kind_phys), protected :: gravit = huge(1._kind_phys)
+  real(kind_phys), public, protected :: gravit = huge(1._kind_phys)
   real(kind_phys), protected :: rair   = huge(1._kind_phys)
 
   real(kind_phys), protected :: omega_earth = huge(1._kind_phys)
